@@ -5,27 +5,10 @@ import openpyxl
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
-def executar_conciliacao():
-    # Descobre automaticamente a pasta onde o arquivo 'comparador.py' está salvo
-    pasta_do_script = os.path.dirname(os.path.abspath(__file__))
-    
-    # Monta o caminho completo para os arquivos de dados na mesma pasta
-    arquivo_salesrun = os.path.join(pasta_do_script, 'salesrun.csv')
-    arquivo_consinco = os.path.join(pasta_do_script, 'consinco.csv')
-
-    # Verifica se os arquivos realmente existem lá
-    if not os.path.exists(arquivo_salesrun) or not os.path.exists(arquivo_consinco):
-        print(f"Erro: Os arquivos 'salesrun.csv' e 'consinco.csv' não foram encontrados na pasta:\n{pasta_do_script}")
-        return
-
-    print("Carregando arquivos...")
-    # Lendo os CSVs...
-    # (O restante do código continua exatamente igual!)
-
 # --- FUNÇÕES DE LIMPEZA E TRATAMENTO DE DADOS ---
 
 def extrair_id_loja(nome_loja):
-    """Extrai apenas o número da loja (ex: 'Loja 10 Ema' -> 10, '12-CRUZEIRO' -> 12)."""
+    """Extrai apenas o número da loja (ex: 'Loja 10' -> 10, '12-FILIAL' -> 12)."""
     if pd.isna(nome_loja):
         return None
     match = re.search(r'\d+', str(nome_loja))
@@ -39,7 +22,6 @@ def limpar_valor_monetario(valor):
         return float(valor)
     
     val_str = str(valor).replace("R$", "").strip()
-    # Identifica se há separador de milhar tradicional para limpar corretamente
     if "." in val_str and "," in val_str:
         val_str = val_str.replace(".", "") # Remove pontos de milhar
     val_str = val_str.replace(",", ".")     # Substitui vírgula decimal por ponto
@@ -51,39 +33,42 @@ def limpar_valor_monetario(valor):
 # --- PROCESSAMENTO PRINCIPAL ---
 
 def executar_conciliacao():
-    arquivo_salesrun = 'salesrun.csv'
-    arquivo_consinco = 'consinco.csv'
+    # Descobre automaticamente a pasta onde o script está salvo
+    pasta_do_script = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else '.'
+    
+    arquivo_bi = os.path.join(pasta_do_script, 'vendas_bi.csv')
+    arquivo_erp = os.path.join(pasta_do_script, 'vendas_erp.csv')
 
     # Verifica se os arquivos estão na mesma pasta
-    if not os.path.exists(arquivo_salesrun) or not os.path.exists(arquivo_consinco):
-        print("Erro: Os arquivos 'salesrun.csv' e 'consinco.csv' devem estar na mesma pasta deste script!")
+    if not os.path.exists(arquivo_bi) or not os.path.exists(arquivo_erp):
+        print("Erro: Os arquivos 'vendas_bi.csv' e 'vendas_erp.csv' devem estar na mesma pasta deste script!")
         return
 
     print("Carregando arquivos...")
-    # Lendo os CSVs. O Salesrun costuma vir em codificação ISO/Latin1 devido a acentos.
-    df_salesrun = pd.read_csv(arquivo_salesrun, sep=';', names=['Loja', 'Valor'], encoding='latin1')
-    df_consinco = pd.read_csv(arquivo_consinco, sep=';', names=['Loja', 'Valor'], encoding='utf-8')
+    # Lendo os CSVs de origem
+    df_bi = pd.read_csv(arquivo_bi, sep=';', names=['Loja', 'Valor'], encoding='latin1')
+    df_erp = pd.read_csv(arquivo_erp, sep=';', names=['Loja', 'Valor'], encoding='utf-8')
 
     print("Tratando dados e identificando IDs de lojas...")
-    df_salesrun['id_loja'] = df_salesrun['Loja'].apply(extrair_id_loja)
-    df_salesrun['venda_salesrun'] = df_salesrun['Valor'].apply(limpar_valor_monetario)
+    df_bi['id_loja'] = df_bi['Loja'].apply(extrair_id_loja)
+    df_bi['venda_bi'] = df_bi['Valor'].apply(limpar_valor_monetario)
 
-    df_consinco['id_loja'] = df_consinco['Loja'].apply(extrair_id_loja)
-    df_consinco['venda_erp'] = df_consinco['Valor'].apply(limpar_valor_monetario)
+    df_erp['id_loja'] = df_erp['Loja'].apply(extrair_id_loja)
+    df_erp['venda_erp'] = df_erp['Valor'].apply(limpar_valor_monetario)
 
     print("Fazendo o cruzamento (merge)...")
     df_merged = pd.merge(
-        df_salesrun[['id_loja', 'Loja', 'venda_salesrun']],
-        df_consinco[['id_loja', 'Loja', 'venda_erp']],
+        df_bi[['id_loja', 'Loja', 'venda_bi']],
+        df_erp[['id_loja', 'Loja', 'venda_erp']],
         on='id_loja',
         how='outer',
-        suffixes=('_salesrun', '_consinco')
+        suffixes=('_bi', '_erp')
     )
 
     # Preenche possíveis lojas faltantes com valor 0.0
-    df_merged['venda_salesrun'] = df_merged['venda_salesrun'].fillna(0.0)
+    df_merged['venda_bi'] = df_merged['venda_bi'].fillna(0.0)
     df_merged['venda_erp'] = df_merged['venda_erp'].fillna(0.0)
-    df_merged['Diferença'] = df_merged['venda_erp'] - df_merged['venda_salesrun']
+    df_merged['Diferença'] = df_merged['venda_erp'] - df_merged['venda_bi']
 
     # Define o status de batimento
     df_merged['Status'] = df_merged['Diferença'].apply(lambda x: 'OK' if abs(x) < 0.01 else 'DIVERGENTE')
@@ -126,8 +111,8 @@ def executar_conciliacao():
     )
 
     # --- ABA DETALHADA ---
-    headers = ["Cód. Loja", "Nome Loja (Salesrun)", "Venda Salesrun (A)", 
-               "Nome Loja (Consinco)", "Venda Consinco (B)", "Diferença (B - A)", "Status"]
+    headers = ["Cód. Loja", "Nome Loja (BI)", "Venda BI (A)", 
+               "Nome Loja (ERP)", "Venda ERP (B)", "Diferença (B - A)", "Status"]
 
     for col_num, header in enumerate(headers, 1):
         cell = ws_details.cell(row=3, column=col_num)
@@ -137,7 +122,7 @@ def executar_conciliacao():
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
     ws_details.row_dimensions[3].height = 28
-    ws_details.cell(row=1, column=1).value = "Batimento de Vendas Diário - Consinco vs. Salesrun"
+    ws_details.cell(row=1, column=1).value = "Batimento de Vendas Diário - ERP vs. Plataforma BI"
     ws_details.cell(row=1, column=1).font = font_title
     ws_details.cell(row=2, column=1).value = "Relatório gerado de forma automatizada por script Python"
     ws_details.cell(row=2, column=1).font = font_subtitle
@@ -146,8 +131,8 @@ def executar_conciliacao():
     row_idx = 4
     for idx, row in df_merged.iterrows():
         r_data = [
-            row['id_loja'], row['Loja_salesrun'], row['venda_salesrun'],
-            row['Loja_consinco'], row['venda_erp'], row['Diferença'], row['Status']
+            row['id_loja'], row['Loja_bi'], row['venda_bi'],
+            row['Loja_erp'], row['venda_erp'], row['Diferença'], row['Status']
         ]
         
         is_div = row['Status'] == 'DIVERGENTE'
@@ -285,7 +270,7 @@ def executar_conciliacao():
     else:
         for idx, row in div_rows.iterrows():
             ws_summary.cell(row=tbl_row, column=2).value = row['id_loja']
-            ws_summary.cell(row=tbl_row, column=3).value = row['Loja_consinco']
+            ws_summary.cell(row=tbl_row, column=3).value = row['Loja_erp']
             ws_summary.cell(row=tbl_row, column=4).value = row['Diferença']
             
             ws_summary.cell(row=tbl_row, column=2).alignment = Alignment(horizontal="center")
