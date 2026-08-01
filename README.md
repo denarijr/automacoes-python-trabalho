@@ -7,7 +7,7 @@ Este repositório reúne scripts em Python desenvolvidos para automatizar rotina
 ## 📋 Projetos Incluídos
 
 ### 1. 📊 Conciliação e Batimento de Vendas (ERP vs. Plataforma BI)
-* **Arquivo:** `comparador_vendas.py`
+* **Arquivo:** `comparador.py`
 * **Objetivo:** Automatizar a verificação diária de consistência de vendas entre o sistema ERP e a plataforma de dashboards.
 * **Funcionamento:**
   * Lê e cruza os arquivos de vendas (`CSV`).
@@ -17,7 +17,7 @@ Este repositório reúne scripts em Python desenvolvidos para automatizar rotina
 ---
 
 ### 2. 🏷️ Monitor de Preços de Concorrentes & Formatador de Arquivo
-* **Arquivo:** `coletor_precos_concorrentes.py`
+* **Arquivo:** `separar_concorrentes.py`
 * **Objetivo:** Processar e formatar dados de pesquisa de preços de concorrentes para integração com sistemas internos.
 * **Funcionamento:**
   * Realiza a leitura e estruturação dos preços e produtos monitorados.
